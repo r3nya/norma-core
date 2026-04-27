@@ -1,0 +1,21 @@
+appId: dev.normacore.station-app
+productName: NormaCore Station
+directories:
+  output: release
+files:
+  - dist/**/*
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
+extraResources:
+  - from: ../station-viewer/dist
+    to: station-viewer-dist
