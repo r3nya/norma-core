@@ -22,9 +22,10 @@ linux:
   maintainer: NormaCore <hello@normacore.dev>
   vendor: NormaCore
   desktop:
-    Name: NormaCore Station
-    Comment: Physical Operations Platform
-    StartupWMClass: normacore-station
+    entry:
+      Name: NormaCore Station
+      Comment: Physical Operations Platform
+      StartupWMClass: normacore-station
   target:
     - AppImage
     - deb
