@@ -20,6 +20,7 @@
     "start": "yarn build:viewer && yarn build:station && yarn build && electron . --load-dist",
     "package": "yarn clean:release && yarn build:viewer && yarn build:station && yarn build && electron-builder --config electron-builder.yml",
     "package:mac": "yarn clean:release && yarn build:viewer && yarn build:station && yarn build && electron-builder --mac --config electron-builder.yml",
+    "lint": "oxlint src/",
     "type-check": "node scripts/generate-version.mjs && tsc --noEmit"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
   "devDependencies": {
     "electron": "^35.0.0",
     "electron-builder": "^26.0.0",
+    "oxlint": "^1.50.0",
     "typescript": "5.9.3"
   },
   "engines": {
