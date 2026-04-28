@@ -18,7 +18,7 @@ linux:
   vendor: NormaCore
   desktop:
     Name: NormaCore Station
-    Comment: Robotics Control Platform
+    Comment: Physical Operations Platform
     StartupWMClass: normacore-station
   target:
     - AppImage
