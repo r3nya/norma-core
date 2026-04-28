@@ -10,12 +10,16 @@ mac:
   target:
     - dmg
     - zip
-win:
-  icon: build/icon.ico
-  target:
-    - nsis
 linux:
   icon: build/icon.png
+  category: Development
+  executableName: normacore-station
+  maintainer: NormaCore <hello@normacore.dev>
+  vendor: NormaCore
+  desktop:
+    Name: NormaCore Station
+    Comment: Robotics Control Platform
+    StartupWMClass: normacore-station
   target:
     - AppImage
     - deb
@@ -28,4 +32,3 @@ extraResources:
     to: bin
     filter:
       - station
-      - station.exe

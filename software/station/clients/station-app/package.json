@@ -21,7 +21,6 @@
     "package": "yarn clean:release && yarn build:viewer && yarn build:station && yarn build && electron-builder --config electron-builder.yml",
     "package:mac": "yarn clean:release && yarn build:viewer && yarn build:station && yarn build && electron-builder --mac --config electron-builder.yml",
     "package:linux": "yarn clean:release && yarn build:viewer && yarn build:station && yarn build && electron-builder --linux --config electron-builder.yml",
-    "package:win": "yarn clean:release && yarn build:viewer && yarn build:station && yarn build && electron-builder --win --config electron-builder.yml",
     "lint": "oxlint src/",
     "type-check": "node scripts/generate-version.mjs && tsc --noEmit"
   },
