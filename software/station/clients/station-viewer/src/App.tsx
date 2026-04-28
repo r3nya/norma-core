@@ -1,10 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
 import MainLayout from './components/MainLayout';
+import { isElectron } from '@/utils/platform';
 
 // Use HashRouter for Electron (file:// protocol) — BrowserRouter for web
-const isDesktop = window.location.protocol === 'file:';
-const Router = isDesktop ? HashRouter : BrowserRouter;
+const Router = isElectron() ? HashRouter : BrowserRouter;
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const HistoryPage = lazy(() => import('./pages/HistoryPage'));
