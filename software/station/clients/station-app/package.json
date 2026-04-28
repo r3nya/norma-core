@@ -12,9 +12,11 @@
   "scripts": {
     "dev": "tsc && electron .",
     "build": "tsc",
-    "start": "electron .",
-    "package": "electron-builder --config electron-builder.yml",
-    "package:mac": "electron-builder --mac --config electron-builder.yml",
+    "build:viewer": "cd ../station-viewer && yarn build",
+    "build:station": "cd ../../../.. && cargo build --release --package=station",
+    "start": "yarn build:viewer && yarn build:station && tsc && electron . --load-dist",
+    "package": "yarn build:viewer && yarn build:station && yarn build && electron-builder --config electron-builder.yml",
+    "package:mac": "yarn build:viewer && yarn build:station && yarn build && electron-builder --mac --config electron-builder.yml",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {},
