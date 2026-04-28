@@ -6,16 +6,24 @@ files:
   - dist/**/*
 mac:
   category: public.app-category.developer-tools
+  icon: build/icon.icns
   target:
     - dmg
     - zip
 win:
+  icon: build/icon.ico
   target:
     - nsis
 linux:
+  icon: build/icon.png
   target:
     - AppImage
     - deb
 extraResources:
   - from: ../station-viewer/dist
     to: station-viewer-dist
+  - from: ../../../../target/release
+    to: bin
+    filter:
+      - station
+      - station.exe

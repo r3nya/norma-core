@@ -1,59 +1,69 @@
 # @normacore/station-app
 
-Desktop wrapper for station-viewer. Electron shell, zero UI duplication.
+Self-contained desktop app for NormaCore Station. Electron shell, bundled station-viewer UI, and bundled Rust station backend.
 
 ## Quick Start
 
 ```bash
-# prereqs: node >=22, station backend running on :8889
+# prereqs: node >=22, Rust toolchain, cargo, station backend dependencies
 yarn install
 
-# dev mode — loads Vite dev server (start station-viewer first)
-cd ../station-viewer && yarn dev   # terminal 1
-cd station-app && yarn dev         # terminal 2 (opens Electron → localhost:5173)
+# dev mode — loads Vite dev server (start station-viewer and station manually)
+cd ../station-viewer && yarn build && yarn dev                # terminal 1
+cd ../../bin/station && RUST_LOG=info cargo run -- --tcp 8888 --web 8889  # terminal 2
+cd software/station/clients/station-app && yarn dev           # terminal 3 (opens Electron → localhost:5173)
 
-# prod mode — loads built dist
-cd ../station-viewer && yarn build
-yarn start   # loads station-viewer/dist via file://
+# local production preview — builds station-viewer + station backend, then loads dist via file://
+yarn start
 ```
 
 ## Build & Package
 
 ```bash
 yarn build          # tsc → dist/
-yarn package:mac    # electron-builder → release/
+yarn build:viewer   # builds ../station-viewer → ../station-viewer/dist
+yarn build:station  # cargo build --release --package=station → ../../../../target/release/station
+yarn package:mac    # builds viewer + station + app, then electron-builder → release/
+yarn package        # same, all configured platforms
 ```
 
 ## Architecture
 
 ```
 station-app (Electron)
-  ↓ loads
-station-viewer (React/Vite)
-  ↓ connects
-station backend (ws://127.0.0.1:8889/api)
+  ├─ starts bundled station backend (resources/bin/station)
+  └─ loads bundled station-viewer (resources/station-viewer-dist/index.html)
+       ↓ connects
+     ws://127.0.0.1:8889/api
 ```
 
-- **Dev:** Electron → `http://localhost:5173` (Vite HMR)
-- **Prod:** Electron → `station-viewer/dist/index.html` (`file://`)
-- **Router:** Auto-detects `file://` → `HashRouter`, otherwise `BrowserRouter`
-- **Backend URL:** Injected via `window.stationDesktop.backendUrl` (preload bridge)
+- **Dev:** Electron → `http://localhost:5173` (Vite HMR). Backend is expected to be started separately.
+- **Local production preview:** Electron starts `../../../../target/release/station` and loads `../station-viewer/dist/index.html` (`file://`) via `yarn start`.
+- **Packaged app:** Electron starts `process.resourcesPath/bin/station` and loads `process.resourcesPath/station-viewer-dist/index.html` (`file://`).
+- **Router:** Auto-detects `file://` → `HashRouter`, otherwise `BrowserRouter`.
+- **Backend URL:** Injected via `window.stationDesktop.backendUrl` (preload bridge), currently `ws://127.0.0.1:8889/api`.
+- **Data/config:** bundled backend runs with cwd at Electron `userData`; `station_data/` and `station.yaml` live there.
 
 ## Files
 
 ```
 src/
-  main.ts       # Electron main process
+  main.ts       # Electron main process; starts/stops station backend in production modes
   preload.ts    # contextBridge — exposes stationDesktop API
   types.d.ts    # TS declarations
+build/
+  icon.icns     # macOS icon
+  icon.ico      # Windows icon
+  icon.png      # Linux icon
 ```
 
 ## Config
 
-Backend defaults to `ws://127.0.0.1:8889/api`. Override later via config persistence (Phase 3).
+Backend defaults to `ws://127.0.0.1:8889/api` and NormFS TCP to `127.0.0.1:8888`. Override later via config persistence / free port selection (Phase 3).
 
 ## Stack
 
 - Electron 35
 - TypeScript 5.9
 - electron-builder
+- Rust station backend
