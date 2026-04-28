@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, shell } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import windowStateKeeper from 'electron-window-state';
 import { STATION_VERSION } from './generated/version';
 
 const FORCE_LOAD_DIST = process.argv.includes('--load-dist');
@@ -195,9 +196,18 @@ function stopStationBackend(): void {
 
 function createWindow(): void {
   const devIconPath = getDevIconPath();
+
+  // Load previous window state (or use defaults)
+  const mainWindowState = windowStateKeeper({
+    defaultWidth: 1280,
+    defaultHeight: 800,
+  });
+
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: mainWindowState.width,
+    height: mainWindowState.height,
+    x: mainWindowState.x,
+    y: mainWindowState.y,
     minWidth: 900,
     minHeight: 600,
     title: 'NormaCore Station',
@@ -209,6 +219,9 @@ function createWindow(): void {
       sandbox: true,
     },
   });
+
+  // Register window state keeper to save state on close/resize/move
+  mainWindowState.manage(win);
 
   // Block navigation and new windows for security
   win.webContents.on('will-navigate', (event) => {
