@@ -19,6 +19,8 @@ linux:
   target:
     - AppImage
     - deb
+    - rpm
+    - tar.gz
 extraResources:
   - from: ../station-viewer/dist
     to: station-viewer-dist
