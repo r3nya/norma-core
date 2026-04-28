@@ -1,6 +1,6 @@
 {
   "name": "@normacore/station-app",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.6",
   "description": "Desktop Electron wrapper for NormaCore station-viewer",
   "license": "MIT",
   "repository": {
@@ -10,14 +10,16 @@
   },
   "main": "dist/main.js",
   "scripts": {
-    "dev": "tsc && electron .",
-    "build": "tsc",
+    "generate:version": "node scripts/generate-version.mjs",
+    "dev": "node scripts/generate-version.mjs && tsc && electron .",
+    "dev:tools": "node scripts/generate-version.mjs && tsc && electron . --devtools",
+    "build": "node scripts/generate-version.mjs && tsc",
     "build:viewer": "cd ../station-viewer && yarn build",
     "build:station": "cd ../../../.. && cargo build --release --package=station",
-    "start": "yarn build:viewer && yarn build:station && tsc && electron . --load-dist",
+    "start": "yarn build:viewer && yarn build:station && yarn build && electron . --load-dist",
     "package": "yarn build:viewer && yarn build:station && yarn build && electron-builder --config electron-builder.yml",
     "package:mac": "yarn build:viewer && yarn build:station && yarn build && electron-builder --mac --config electron-builder.yml",
-    "type-check": "tsc --noEmit"
+    "type-check": "node scripts/generate-version.mjs && tsc --noEmit"
   },
   "dependencies": {},
   "devDependencies": {
