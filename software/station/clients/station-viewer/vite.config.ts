@@ -56,6 +56,7 @@ const stationVersion = `${resolveWorkspaceVersion()} (${resolveGitHash()})`;
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   define: {
     __STATION_VERSION__: JSON.stringify(stationVersion),
   },
