@@ -1,15 +1,107 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, shell } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import { STATION_VERSION } from './generated/version';
 
 const FORCE_LOAD_DIST = process.argv.includes('--load-dist');
+const OPEN_DEVTOOLS = process.argv.includes('--devtools');
 const IS_DEV = !app.isPackaged && !FORCE_LOAD_DIST;
 const STATION_WEB_ADDR = '127.0.0.1:8889';
 const STATION_TCP_ADDR = '127.0.0.1:8888';
+const NORMACORE_WEBSITE = 'https://normacore.dev/';
 
 let stationProcess: ChildProcess | null = null;
 let isQuitting = false;
+
+function openNormaCoreWebsite(): void {
+  shell.openExternal(NORMACORE_WEBSITE).catch((err) => {
+    console.error('Failed to open NormaCore website:', err);
+  });
+}
+
+function configureApplicationMenu(): void {
+  app.setAboutPanelOptions({
+    applicationName: 'NormaCore Station',
+    applicationVersion: STATION_VERSION,
+    copyright: 'NormaCore',
+    credits: NORMACORE_WEBSITE,
+    website: NORMACORE_WEBSITE,
+  });
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin'
+      ? [{
+          label: app.name,
+          submenu: [
+            { role: 'about' as const },
+            {
+              label: 'NormaCore Website',
+              click: openNormaCoreWebsite,
+            },
+            { type: 'separator' as const },
+            { role: 'services' as const },
+            { type: 'separator' as const },
+            { role: 'hide' as const },
+            { role: 'hideOthers' as const },
+            { role: 'unhide' as const },
+            { type: 'separator' as const },
+            { role: 'quit' as const },
+          ],
+        }]
+      : []),
+    {
+      label: 'File',
+      submenu: [process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        ...(process.platform === 'darwin'
+          ? [{ role: 'zoom' as const }, { type: 'separator' as const }, { role: 'front' as const }]
+          : [{ role: 'close' as const }]),
+      ],
+    },
+    {
+      role: 'help',
+      submenu: [
+        {
+          label: 'NormaCore Website',
+          click: openNormaCoreWebsite,
+        },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 function getViewerDistPath(): string {
   if (app.isPackaged) {
@@ -31,6 +123,11 @@ function getStationBinaryPath(): string {
 
   // Local prod preview: Rust build output lives under the repository target directory
   return path.join(__dirname, '..', '..', '..', '..', '..', 'target', 'release', binaryName);
+}
+
+function getDevIconPath(): string | undefined {
+  const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
+  return fs.existsSync(iconPath) ? iconPath : undefined;
 }
 
 function startStationBackend(): void {
@@ -97,12 +194,14 @@ function stopStationBackend(): void {
 }
 
 function createWindow(): void {
+  const devIconPath = getDevIconPath();
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
     title: 'NormaCore Station',
+    icon: devIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -124,7 +223,9 @@ function createWindow(): void {
     win.loadURL('http://localhost:5173').catch((err) => {
       console.error('Failed to load Vite dev server — is it running?', err.message);
     });
-    win.webContents.openDevTools();
+    if (OPEN_DEVTOOLS) {
+      win.webContents.openDevTools();
+    }
     return;
   }
 
@@ -145,6 +246,15 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  configureApplicationMenu();
+
+  if (process.platform === 'darwin') {
+    const devIconPath = getDevIconPath();
+    if (devIconPath) {
+      app.dock?.setIcon(devIconPath);
+    }
+  }
+
   createWindow();
 
   app.on('activate', () => {

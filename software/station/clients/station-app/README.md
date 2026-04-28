@@ -12,6 +12,7 @@ yarn install
 cd ../station-viewer && yarn build && yarn dev                # terminal 1
 cd ../../bin/station && RUST_LOG=info cargo run -- --tcp 8888 --web 8889  # terminal 2
 cd software/station/clients/station-app && yarn dev           # terminal 3 (opens Electron → localhost:5173)
+# or use `yarn dev:tools` in terminal 3 to open Electron with DevTools
 
 # local production preview — builds station-viewer + station backend, then loads dist via file://
 yarn start
@@ -20,7 +21,7 @@ yarn start
 ## Build & Package
 
 ```bash
-yarn build          # tsc → dist/
+yarn build          # generate station version + tsc → dist/
 yarn build:viewer   # builds ../station-viewer → ../station-viewer/dist
 yarn build:station  # cargo build --release --package=station → ../../../../target/release/station
 yarn package:mac    # builds viewer + station + app, then electron-builder → release/
@@ -55,6 +56,8 @@ build/
   icon.icns     # macOS icon
   icon.ico      # Windows icon
   icon.png      # Linux icon
+scripts/
+  generate-version.mjs  # mirrors station-viewer __STATION_VERSION__ generation
 ```
 
 ## Config
