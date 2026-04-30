@@ -11,9 +11,18 @@ const IS_DEV = !app.isPackaged && !FORCE_LOAD_DIST;
 const STATION_WEB_ADDR = '127.0.0.1:8889';
 const STATION_TCP_ADDR = '127.0.0.1:8888';
 const NORMACORE_WEBSITE = 'https://normacore.dev/';
+const BACKEND_SHUTDOWN_TIMEOUT_MS = 3000;
 
 let stationProcess: ChildProcess | null = null;
+let stationStopPromise: Promise<void> | null = null;
 let isQuitting = false;
+let backendStoppedForQuit = false;
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
 
 function openNormaCoreWebsite(): void {
   shell.openExternal(NORMACORE_WEBSITE).catch((err) => {
@@ -185,13 +194,62 @@ function startStationBackend(): void {
   });
 }
 
-function stopStationBackend(): void {
-  if (!stationProcess) {
-    return;
+function stopStationBackend(): Promise<void> {
+  if (stationStopPromise) {
+    return stationStopPromise;
   }
 
-  stationProcess.kill();
+  const processToStop = stationProcess;
   stationProcess = null;
+
+  if (!processToStop || processToStop.exitCode !== null) {
+    return Promise.resolve();
+  }
+
+  const stopPromise = new Promise<void>((resolve) => {
+    let settled = false;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+      processToStop.removeListener('exit', cleanup);
+      processToStop.removeListener('error', handleError);
+      resolve();
+    };
+
+    const handleError = (err: Error) => {
+      console.error('Error while stopping station backend:', err);
+      cleanup();
+    };
+
+    forceKillTimer = setTimeout(() => {
+      if (processToStop.exitCode === null) {
+        console.warn('station backend did not exit after SIGTERM; sending SIGKILL');
+        processToStop.kill('SIGKILL');
+      }
+    }, BACKEND_SHUTDOWN_TIMEOUT_MS);
+
+    processToStop.once('exit', cleanup);
+    processToStop.once('error', handleError);
+
+    if (processToStop.exitCode !== null) {
+      cleanup();
+    } else if (!processToStop.kill('SIGTERM')) {
+      cleanup();
+    }
+  });
+
+  stationStopPromise = stopPromise.finally(() => {
+    stationStopPromise = null;
+  });
+
+  return stationStopPromise;
 }
 
 function createWindow(): void {
@@ -258,32 +316,60 @@ function createWindow(): void {
   });
 }
 
-app.whenReady().then(() => {
-  configureApplicationMenu();
-
-  if (process.platform === 'darwin') {
-    const devIconPath = getDevIconPath();
-    if (devIconPath) {
-      app.dock?.setIcon(devIconPath);
-    }
-  }
-
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+if (gotSingleInstanceLock) {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win) {
       createWindow();
+      return;
+    }
+
+    if (win.isMinimized()) {
+      win.restore();
+    }
+    win.focus();
+  });
+
+  app.whenReady().then(() => {
+    configureApplicationMenu();
+
+    if (process.platform === 'darwin') {
+      const devIconPath = getDevIconPath();
+      if (devIconPath) {
+        app.dock?.setIcon(devIconPath);
+      }
+    }
+
+    createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+
+  app.on('before-quit', (event) => {
+    isQuitting = true;
+
+    if (backendStoppedForQuit || (!stationProcess && !stationStopPromise)) {
+      return;
+    }
+
+    event.preventDefault();
+    stopStationBackend()
+      .catch((err) => {
+        console.error('Failed to stop station backend cleanly:', err);
+      })
+      .finally(() => {
+        backendStoppedForQuit = true;
+        app.quit();
+      });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
     }
   });
-});
-
-app.on('before-quit', () => {
-  isQuitting = true;
-  stopStationBackend();
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+}

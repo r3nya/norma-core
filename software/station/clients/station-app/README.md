@@ -38,7 +38,7 @@ station-app (Electron)
      ws://127.0.0.1:8889/api
 ```
 
-- **Dev:** Electron → `http://localhost:5173` (Vite HMR). Backend is expected to be started separately.
+- **Dev:** Electron → `http://localhost:5173` (Vite HMR). Backend is expected to be started separately. Because this path uses `http://`, it exercises the web router/assets path; use `yarn start` or packaged builds to exercise the Electron `file://` path.
 - **Local production preview:** Electron starts `../../../../target/release/station` and loads `../station-viewer/dist/index.html` (`file://`) via `yarn start`.
 - **Packaged app:** Electron starts `process.resourcesPath/bin/station` and loads `process.resourcesPath/station-viewer-dist/index.html` (`file://`).
 - **Router:** Auto-detects `file://` → `HashRouter`, otherwise `BrowserRouter`.
@@ -66,7 +66,7 @@ Backend defaults to `ws://127.0.0.1:8889/api` and NormFS TCP to `127.0.0.1:8888`
 
 ## Stack
 
-- Electron 35
+- Electron 40
 - TypeScript 5.9
 - electron-builder
 - Rust station backend
