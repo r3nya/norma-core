@@ -13,8 +13,6 @@ const STATION_TCP_ADDR = '127.0.0.1:8888';
 const NORMACORE_WEBSITE = 'https://normacore.dev/';
 const BACKEND_SHUTDOWN_TIMEOUT_MS = 3000;
 
-// TODO: If packaged macOS builds still crash in Chromium Fontations, test:
-// app.commandLine.appendSwitch('disable-features', 'FontationsFontBackend');
 let stationProcess: ChildProcess | null = null;
 let stationStopPromise: Promise<void> | null = null;
 let isQuitting = false;
