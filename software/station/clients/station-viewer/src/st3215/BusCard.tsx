@@ -29,7 +29,14 @@ const STALE_CAMERA_MAX_AGE_MS = 60_000;
 const MIN_CALIBRATED_RANGE = 100;
 
 type RobotViewMode = "model" | "camera";
-type CameraLayoutMode = "pip" | "side-by-side";
+type CameraLayoutMode = "pip" | "side-by-side" | "stacked";
+type CameraFitMode = "contain" | "cover";
+
+function getVideoSourceShortLabel(entry: FrameEntry<usbvideo.IRxEnvelope>): string {
+  return entry.data.camera?.deviceNumber !== undefined
+    ? String(entry.data.camera.deviceNumber)
+    : "Camera";
+}
 
 interface BusCardProps {
   bus: st3215.InferenceState.IBusState;
@@ -52,6 +59,8 @@ const BusCard: React.FC<BusCardProps> = ({
   const [secondaryVideoSourceId, setSecondaryVideoSourceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<RobotViewMode>("model");
   const [cameraLayout, setCameraLayout] = useState<CameraLayoutMode>("pip");
+  const [primaryCameraFit, setPrimaryCameraFit] = useState<CameraFitMode>("contain");
+  const [secondaryCameraFit, setSecondaryCameraFit] = useState<CameraFitMode>("contain");
   const [showCameraMotorData, setShowCameraMotorData] = useState(false);
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isWebControlled, setIsWebControlled] = useState(false);
@@ -127,13 +136,27 @@ const BusCard: React.FC<BusCardProps> = ({
     }
   }, [secondaryVideoSourceId]);
 
-  const handleSecondaryVideoSourceChange = useCallback((sourceId: string | null) => {
-    if (sourceId && sourceId === primaryVideoSourceId) {
+  const handleCameraChipClick = useCallback((sourceId: string) => {
+    if (sourceId === primaryVideoSourceId) {
+      hasPrimaryVideoSourcePreferenceRef.current = true;
+      setPrimaryVideoSourceId(secondaryVideoSourceId);
+      setSecondaryVideoSourceId(null);
+      return;
+    }
+
+    if (sourceId === secondaryVideoSourceId) {
+      setSecondaryVideoSourceId(null);
+      return;
+    }
+
+    if (!primaryVideoSourceId) {
+      hasPrimaryVideoSourcePreferenceRef.current = true;
+      setPrimaryVideoSourceId(sourceId);
       return;
     }
 
     setSecondaryVideoSourceId(sourceId);
-  }, [primaryVideoSourceId]);
+  }, [primaryVideoSourceId, secondaryVideoSourceId]);
 
   const handleSwapVideoSources = useCallback(() => {
     if (!primaryVideoSourceId || !secondaryVideoSourceId) {
@@ -287,10 +310,6 @@ const BusCard: React.FC<BusCardProps> = ({
         : activeVideoSources,
     [activeVideoSources, secondaryVideoSourceId, viewMode],
   );
-  const secondaryVideoSourceOptions = useMemo(
-    () => activeVideoSources.filter((entry) => getVideoSourceId(entry) !== primaryVideoSourceId),
-    [activeVideoSources, primaryVideoSourceId],
-  );
   const toggleCameraFullscreen = useCallback(async () => {
     const cameraContent = cameraContentRef.current;
     if (!cameraContent) {
@@ -388,36 +407,57 @@ const BusCard: React.FC<BusCardProps> = ({
               );
             })}
           </select>
-          <select
-            value={primaryVideoSourceId ?? ""}
-            onChange={(e) => handlePrimaryVideoSourceChange(e.target.value || null)}
-            className={`${selectControlClass} ${cameraSelectWidthClass}`}
-            title="Main camera"
-          >
-            <option value="">None</option>
-            {primaryVideoSourceOptions.map((entry) => {
-              const sourceId = getVideoSourceId(entry);
-              const label = getVideoSourceLabel(entry);
-              return (
-                <option
-                  key={`${entry.queueId}-${sourceId}`}
-                  value={sourceId}
-                  title={label}
-                >
-                  {label}
-                </option>
-              );
-            })}
-          </select>
-          {viewMode === "camera" && (
+          {viewMode === "camera" ? (
+            <div
+              className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label="Camera selection"
+            >
+              {activeVideoSources.map((entry) => {
+                const sourceId = getVideoSourceId(entry);
+                const label = getVideoSourceLabel(entry);
+                const shortLabel = getVideoSourceShortLabel(entry);
+                const role =
+                  sourceId === primaryVideoSourceId
+                    ? "MAIN"
+                    : sourceId === secondaryVideoSourceId
+                      ? "AUX"
+                      : null;
+
+                return (
+                  <button
+                    key={`${entry.queueId}-${sourceId}`}
+                    type="button"
+                    onClick={() => handleCameraChipClick(sourceId)}
+                    className={`flex h-9 max-w-[9rem] items-center gap-1.5 rounded-md border px-2.5 text-sm font-bold transition-colors ${
+                      role === "MAIN"
+                        ? "border-accent-data bg-accent-data text-surface-base"
+                        : role === "AUX"
+                          ? "border-accent-success-deep bg-accent-success-bg text-text-primary"
+                          : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
+                    }`}
+                    title={role ? `${role}: ${label}` : label}
+                    aria-label={role ? `${role} camera ${label}` : `Select camera ${label}`}
+                  >
+                    <span className="truncate">{shortLabel}</span>
+                    {role && (
+                      <span className="rounded bg-black/20 px-1 py-0.5 text-[10px] leading-none">
+                        {role}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
             <select
-              value={secondaryVideoSourceId ?? ""}
-              onChange={(e) => handleSecondaryVideoSourceChange(e.target.value || null)}
+              value={primaryVideoSourceId ?? ""}
+              onChange={(e) => handlePrimaryVideoSourceChange(e.target.value || null)}
               className={`${selectControlClass} ${cameraSelectWidthClass}`}
-              title="Picture-in-picture camera"
+              title="Main camera"
             >
               <option value="">None</option>
-              {secondaryVideoSourceOptions.map((entry) => {
+              {primaryVideoSourceOptions.map((entry) => {
                 const sourceId = getVideoSourceId(entry);
                 const label = getVideoSourceLabel(entry);
                 return (
@@ -468,6 +508,10 @@ const BusCard: React.FC<BusCardProps> = ({
               needsCalibration={needsCalibration}
               isWebControlled={isWebControlled}
               cameraLayout={cameraLayout}
+              primaryCameraFit={primaryCameraFit}
+              secondaryCameraFit={secondaryCameraFit}
+              onPrimaryCameraFitToggle={() => setPrimaryCameraFit((fit) => (fit === "contain" ? "cover" : "contain"))}
+              onSecondaryCameraFitToggle={() => setSecondaryCameraFit((fit) => (fit === "contain" ? "cover" : "contain"))}
             />
             <div className="absolute left-2 top-2 z-50 flex max-w-[calc(100%-1rem)] flex-wrap gap-1.5 rounded-lg border border-border-default bg-surface-primary/75 p-1.5 shadow-lg backdrop-blur-sm sm:left-3 sm:top-3">
               <div
@@ -492,16 +536,20 @@ const BusCard: React.FC<BusCardProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setCameraLayout("side-by-side")}
+                  onClick={() =>
+                    setCameraLayout((layout) =>
+                      layout === "side-by-side" ? "stacked" : "side-by-side",
+                    )
+                  }
                   className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
-                    cameraLayout === "side-by-side"
+                    cameraLayout === "side-by-side" || cameraLayout === "stacked"
                       ? "bg-accent-data text-surface-base"
                       : "text-text-muted hover:text-text-primary"
                   }`}
-                  title="Side-by-side layout"
-                  aria-label="Side-by-side layout"
+                  title={cameraLayout === "stacked" ? "Top-bottom layout" : "Side-by-side layout"}
+                  aria-label={cameraLayout === "stacked" ? "Top-bottom layout" : "Side-by-side layout"}
                 >
-                  <span className="grid h-4 w-4 grid-cols-2 gap-[2px]">
+                  <span className={`grid h-4 w-4 grid-cols-2 gap-[2px] ${cameraLayout === "stacked" ? "rotate-90" : ""}`}>
                     <span className="rounded-[1px] border border-current" />
                     <span className="rounded-[1px] border border-current" />
                   </span>
@@ -535,7 +583,11 @@ const BusCard: React.FC<BusCardProps> = ({
               <button
                 type="button"
                 onClick={toggleCameraFullscreen}
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-surface-primary text-text-muted transition-colors hover:text-text-primary"
+                className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors ${
+                  isCameraFullscreen
+                    ? "border-accent-data bg-accent-data text-surface-base"
+                    : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
+                }`}
                 title={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
                 aria-label={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
               >
