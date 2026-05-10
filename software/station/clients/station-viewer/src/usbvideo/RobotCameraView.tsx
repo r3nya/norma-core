@@ -10,6 +10,7 @@ interface RobotCameraViewProps {
   secondaryVideoSource?: usbvideo.IRxEnvelope;
   primaryVideoSourceId?: string | null;
   secondaryVideoSourceId?: string | null;
+  cameraLayout?: 'pip' | 'side-by-side';
   bus: st3215.InferenceState.IBusState;
   busIndex: number;
   isWebControlled?: boolean;
@@ -19,9 +20,11 @@ interface RobotCameraViewProps {
 }
 
 const RobotCameraView = memo(function RobotCameraView({
+  primaryVideoSource,
   secondaryVideoSource,
   primaryVideoSourceId,
   secondaryVideoSourceId,
+  cameraLayout = 'pip',
   bus,
   busIndex,
   isWebControlled,
@@ -33,17 +36,59 @@ const RobotCameraView = memo(function RobotCameraView({
   // 8-motor humanoids need room for two arm groups without crowding the camera view.
   const motorPanelHeight =
     motorCount >= 8 ? 'clamp(240px, 40%, 320px)' : 'clamp(180px, 32%, 240px)';
+  const isSideBySide = cameraLayout === 'side-by-side' && Boolean(secondaryVideoSourceId);
 
   return (
     <div className="flex flex-col w-full h-full min-h-0 overflow-hidden bg-black rounded-b-lg">
       <div className="relative min-h-0" style={{ flex: '1 1 auto' }}>
-        {primaryVideoSourceId ? (
-          <CameraViewer
-            sourceId={primaryVideoSourceId}
-            className="h-full w-full"
-            imageClassName="select-none"
-            fit="contain"
-          />
+        {isSideBySide && primaryVideoSourceId ? (
+          <div className="grid h-full w-full grid-cols-2">
+            <div className="relative min-h-0 min-w-0 border-r border-border-default">
+              <CameraViewer
+                sourceId={primaryVideoSourceId}
+                className="h-full w-full"
+                imageClassName="select-none"
+                fit="contain"
+              />
+              <div className="absolute bottom-0 left-0 right-0 bg-surface-secondary/70 px-2 py-1 text-xs font-mono text-text-label backdrop-blur-sm">
+                {formatCameraName(primaryVideoSource)}
+              </div>
+            </div>
+            <div className="relative min-h-0 min-w-0">
+              <CameraViewer
+                sourceId={secondaryVideoSourceId}
+                className="h-full w-full"
+                imageClassName="select-none"
+                fit="contain"
+              />
+              <div className="absolute bottom-0 left-0 right-0 bg-surface-secondary/70 px-2 py-1 text-xs font-mono text-text-label backdrop-blur-sm">
+                {formatCameraName(secondaryVideoSource)}
+              </div>
+            </div>
+          </div>
+        ) : primaryVideoSourceId ? (
+          <>
+            <CameraViewer
+              sourceId={primaryVideoSourceId}
+              className="h-full w-full"
+              imageClassName="select-none"
+              fit="contain"
+            />
+            {secondaryVideoSourceId && (
+              <div className="absolute bottom-4 right-4 z-30 h-[160px] w-2/5 min-w-[220px] max-w-[360px] overflow-hidden rounded-lg border-2 border-border-default bg-surface-primary shadow-2xl">
+                <CameraViewer
+                  sourceId={secondaryVideoSourceId}
+                  className="h-full w-full"
+                  imageClassName="select-none"
+                  fit="contain"
+                  overlay="none"
+                />
+                <div className="absolute bottom-0 left-0 right-0 bg-surface-secondary/70 px-2 py-1 text-xs font-mono text-text-label backdrop-blur-sm">
+                  {formatCameraName(secondaryVideoSource)}
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-surface-primary/30 p-6 text-center">
             <div className="text-accent-warning text-lg font-bold uppercase tracking-wide">
@@ -52,21 +97,6 @@ const RobotCameraView = memo(function RobotCameraView({
             <p className="max-w-md text-sm text-text-muted">
               Select an active USB video source in the title bar to switch this robot card into a camera-first operator view.
             </p>
-          </div>
-        )}
-
-        {secondaryVideoSourceId && (
-          <div className="absolute bottom-4 right-4 z-30 h-[160px] w-2/5 min-w-[220px] max-w-[360px] overflow-hidden rounded-lg border-2 border-border-default bg-surface-primary shadow-2xl">
-            <CameraViewer
-              sourceId={secondaryVideoSourceId}
-              className="h-full w-full"
-              imageClassName="select-none"
-              fit="contain"
-              overlay="none"
-            />
-            <div className="absolute bottom-0 left-0 right-0 bg-surface-secondary/70 px-2 py-1 text-xs font-mono text-text-label backdrop-blur-sm">
-              {formatCameraName(secondaryVideoSource)}
-            </div>
           </div>
         )}
 

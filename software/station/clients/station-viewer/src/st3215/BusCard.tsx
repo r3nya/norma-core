@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Long from "long";
-import { Camera } from "lucide-react";
+import { Camera, Maximize2, Minimize2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { commandManager } from "../api/commands";
 import { FrameEntry } from "../api/frame-parser";
@@ -29,6 +29,7 @@ const STALE_CAMERA_MAX_AGE_MS = 60_000;
 const MIN_CALIBRATED_RANGE = 100;
 
 type RobotViewMode = "model" | "camera";
+type CameraLayoutMode = "pip" | "side-by-side";
 
 interface BusCardProps {
   bus: st3215.InferenceState.IBusState;
@@ -50,7 +51,11 @@ const BusCard: React.FC<BusCardProps> = ({
   const [primaryVideoSourceId, setPrimaryVideoSourceId] = useState<string | null>(null);
   const [secondaryVideoSourceId, setSecondaryVideoSourceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<RobotViewMode>("model");
+  const [cameraLayout, setCameraLayout] = useState<CameraLayoutMode>("pip");
+  const [showCameraMotorData, setShowCameraMotorData] = useState(false);
+  const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isWebControlled, setIsWebControlled] = useState(false);
+  const cameraContentRef = useRef<HTMLDivElement>(null);
 
   const activeVideoSources = useMemo(() => {
     if (!videoSources) {
@@ -262,8 +267,9 @@ const BusCard: React.FC<BusCardProps> = ({
   const needsCalibration = hasMotors && (hasUnfrozenMotor || hasNarrowRange);
   const canRender3d = [6, 8].includes(bus.motors?.length || 0);
   const canShowCamera = activeVideoSources.length > 0;
-  const controlSourceWidthClass = viewMode === "camera" ? "max-w-[140px]" : "max-w-[180px]";
-  const cameraSelectWidthClass = viewMode === "camera" ? "max-w-[120px]" : "max-w-[180px]";
+  const controlSourceWidthClass = viewMode === "camera" ? "w-[170px]" : "max-w-[180px]";
+  const cameraSelectWidthClass = viewMode === "camera" ? "w-[150px]" : "max-w-[180px]";
+  const selectControlClass = "block h-9 min-w-0 rounded-md border border-border-subtle bg-surface-secondary pl-3 pr-10 text-sm text-text-primary focus:border-accent-success-deep focus:outline-none focus:ring-accent-success-deep";
   const primaryVideoSourceOptions = useMemo(
     () =>
       viewMode === "camera"
@@ -275,6 +281,44 @@ const BusCard: React.FC<BusCardProps> = ({
     () => activeVideoSources.filter((entry) => getVideoSourceId(entry) !== primaryVideoSourceId),
     [activeVideoSources, primaryVideoSourceId],
   );
+  const toggleCameraFullscreen = useCallback(async () => {
+    const cameraContent = cameraContentRef.current;
+    if (!cameraContent) {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement === cameraContent) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      await cameraContent.requestFullscreen();
+    } catch {
+      // Ignore fullscreen errors (for example, if blocked by browser policy).
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const cameraContent = cameraContentRef.current;
+      setIsCameraFullscreen(Boolean(cameraContent && document.fullscreenElement === cameraContent));
+    };
+
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const cameraContent = cameraContentRef.current;
+    if (!cameraContent || viewMode === "camera" || document.fullscreenElement !== cameraContent) {
+      return;
+    }
+
+    void document.exitFullscreen();
+  }, [viewMode]);
 
   return (
     <div className="min-w-0 border border-border-default rounded-lg bg-surface-primary/50">
@@ -312,7 +356,7 @@ const BusCard: React.FC<BusCardProps> = ({
                 : (currentMirror?.source?.id?.uniqueId ?? "")
             }
             onChange={(e) => handleControlSourceChange(e.target.value || null)}
-            className={`block min-w-0 ${controlSourceWidthClass} pl-3 pr-10 py-1 text-base border-border-subtle bg-surface-secondary text-text-primary focus:outline-none focus:ring-accent-success-deep focus:border-accent-success-deep sm:text-sm rounded-md`}
+            className={`${selectControlClass} ${controlSourceWidthClass}`}
           >
             <option value="">(Self-controlled)</option>
             <option value="web-controlled">(Web-controlled)</option>
@@ -337,7 +381,7 @@ const BusCard: React.FC<BusCardProps> = ({
           <select
             value={primaryVideoSourceId ?? ""}
             onChange={(e) => handlePrimaryVideoSourceChange(e.target.value || null)}
-            className={`block min-w-0 ${cameraSelectWidthClass} pl-3 pr-10 py-1 text-base border-border-subtle bg-surface-secondary text-text-primary focus:outline-none focus:ring-accent-success-deep focus:border-accent-success-deep sm:text-sm rounded-md`}
+            className={`${selectControlClass} ${cameraSelectWidthClass}`}
             title="Main camera"
           >
             <option value="">None</option>
@@ -359,7 +403,7 @@ const BusCard: React.FC<BusCardProps> = ({
             <select
               value={secondaryVideoSourceId ?? ""}
               onChange={(e) => handleSecondaryVideoSourceChange(e.target.value || null)}
-              className={`block min-w-0 ${cameraSelectWidthClass} basis-full pl-3 pr-10 py-1 text-base border-border-subtle bg-surface-secondary text-text-primary focus:outline-none focus:ring-accent-success-deep focus:border-accent-success-deep sm:text-sm rounded-md`}
+              className={`${selectControlClass} ${cameraSelectWidthClass}`}
               title="Picture-in-picture camera"
             >
               <option value="">None</option>
@@ -377,6 +421,75 @@ const BusCard: React.FC<BusCardProps> = ({
                 );
               })}
             </select>
+          )}
+          {viewMode === "camera" && (
+            <div
+              className="flex rounded-md border border-border-subtle bg-surface-primary p-0.5"
+              role="group"
+              aria-label="Camera layout"
+            >
+              <button
+                type="button"
+                onClick={() => setCameraLayout("pip")}
+                className={`flex h-8 min-w-8 items-center justify-center rounded px-2 transition-colors ${
+                  cameraLayout === "pip"
+                    ? "bg-accent-data text-surface-base"
+                    : "text-text-muted hover:text-text-primary"
+                }`}
+                title="PiP layout"
+                aria-label="PiP layout"
+              >
+                <span className="relative block h-4 w-4 rounded-[2px] border border-current">
+                  <span className="absolute -bottom-px -right-px h-2 w-2 rounded-[1px] border border-current bg-current/20" />
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCameraLayout("side-by-side")}
+                className={`flex h-8 min-w-8 items-center justify-center rounded px-2 transition-colors ${
+                  cameraLayout === "side-by-side"
+                    ? "bg-accent-data text-surface-base"
+                    : "text-text-muted hover:text-text-primary"
+                }`}
+                title="Side-by-side layout"
+                aria-label="Side-by-side layout"
+              >
+                <span className="grid h-4 w-4 grid-cols-2 gap-[2px]">
+                  <span className="rounded-[1px] border border-current" />
+                  <span className="rounded-[1px] border border-current" />
+                </span>
+              </button>
+            </div>
+          )}
+          {viewMode === "camera" && hasMotors && (
+            <button
+              type="button"
+              onClick={() => setShowCameraMotorData((prev) => !prev)}
+              className={`flex h-9 items-center justify-center rounded border px-3 text-xs font-bold transition-colors ${
+                showCameraMotorData
+                  ? "border-accent-success-deep bg-accent-success-bg text-text-primary"
+                  : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
+              }`}
+              title={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
+              aria-label={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
+            >
+              MOTORS
+            </button>
+          )}
+          {viewMode === "camera" && (
+            <button
+              type="button"
+              onClick={toggleCameraFullscreen}
+              className="flex h-9 items-center justify-center rounded border border-border-subtle bg-surface-primary px-2 text-text-muted transition-colors hover:text-text-primary"
+              title={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
+              aria-label={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
+            >
+              {isCameraFullscreen ? (
+                <Minimize2 className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Maximize2 className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
           )}
         </div>
         <div className="flex items-center gap-4 text-sm">
@@ -396,7 +509,10 @@ const BusCard: React.FC<BusCardProps> = ({
       </div>
 
       {/* Content */}
-      <div className="relative h-180">
+      <div
+        ref={cameraContentRef}
+        className={`relative h-180 ${isCameraFullscreen ? "bg-black" : ""}`}
+      >
         {viewMode === "camera" ? (
           <RobotCameraView
             primaryVideoSource={primaryVideoSource}
@@ -405,10 +521,11 @@ const BusCard: React.FC<BusCardProps> = ({
             secondaryVideoSourceId={secondaryVideoSourceId}
             bus={bus}
             busIndex={busIndex}
-            showMotorData={true}
+            showMotorData={showCameraMotorData}
             showCalibrateButton={true}
             needsCalibration={needsCalibration}
             isWebControlled={isWebControlled}
+            cameraLayout={cameraLayout}
           />
         ) : canRender3d ? (
           <BusWebGLRenderer
