@@ -2,7 +2,6 @@ import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { st3215, usbvideo } from '../api/proto.js';
 import MotorDataTable from '../st3215/MotorDataTable';
-import { formatCameraName } from './camera-source';
 import CameraViewer from './CameraViewer';
 
 interface RobotCameraViewProps {
@@ -20,8 +19,6 @@ interface RobotCameraViewProps {
 }
 
 const RobotCameraView = memo(function RobotCameraView({
-  primaryVideoSource,
-  secondaryVideoSource,
   primaryVideoSourceId,
   secondaryVideoSourceId,
   cameraLayout = 'pip',
@@ -39,20 +36,17 @@ const RobotCameraView = memo(function RobotCameraView({
   const isSideBySide = cameraLayout === 'side-by-side' && Boolean(secondaryVideoSourceId);
 
   return (
-    <div className="flex flex-col w-full h-full min-h-0 overflow-hidden bg-black rounded-b-lg">
+    <div className="relative flex flex-col w-full h-full min-h-0 overflow-hidden bg-black rounded-b-lg">
       <div className="relative min-h-0" style={{ flex: '1 1 auto' }}>
         {isSideBySide && primaryVideoSourceId ? (
-          <div className="grid h-full w-full grid-cols-2">
-            <div className="relative min-h-0 min-w-0 border-r border-border-default">
+          <div className="grid h-full w-full grid-rows-2 sm:grid-cols-2 sm:grid-rows-1">
+            <div className="relative min-h-0 min-w-0 border-b border-border-default sm:border-b-0 sm:border-r">
               <CameraViewer
                 sourceId={primaryVideoSourceId}
                 className="h-full w-full"
                 imageClassName="select-none"
                 fit="contain"
               />
-              <div className="absolute bottom-0 left-0 right-0 bg-surface-secondary/70 px-2 py-1 text-xs font-mono text-text-label backdrop-blur-sm">
-                {formatCameraName(primaryVideoSource)}
-              </div>
             </div>
             <div className="relative min-h-0 min-w-0">
               <CameraViewer
@@ -61,9 +55,6 @@ const RobotCameraView = memo(function RobotCameraView({
                 imageClassName="select-none"
                 fit="contain"
               />
-              <div className="absolute bottom-0 left-0 right-0 bg-surface-secondary/70 px-2 py-1 text-xs font-mono text-text-label backdrop-blur-sm">
-                {formatCameraName(secondaryVideoSource)}
-              </div>
             </div>
           </div>
         ) : primaryVideoSourceId ? (
@@ -83,9 +74,6 @@ const RobotCameraView = memo(function RobotCameraView({
                   fit="contain"
                   overlay="none"
                 />
-                <div className="absolute bottom-0 left-0 right-0 bg-surface-secondary/70 px-2 py-1 text-xs font-mono text-text-label backdrop-blur-sm">
-                  {formatCameraName(secondaryVideoSource)}
-                </div>
               </div>
             )}
           </>
@@ -101,7 +89,7 @@ const RobotCameraView = memo(function RobotCameraView({
         )}
 
         {showCalibrateButton && needsCalibration && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
             <Link
               to="/st3215-bus-calibration"
               state={{ bus }}
@@ -113,11 +101,10 @@ const RobotCameraView = memo(function RobotCameraView({
         )}
       </div>
 
-      {/* Motor data section */}
       {showMotorData && motorCount > 0 && (
         <div
-          className="relative min-h-0 border-t border-border-default bg-surface-base"
-          style={{ flex: `0 0 ${motorPanelHeight}` }}
+          className="absolute bottom-0 left-0 right-0 z-40 min-h-0 border-t border-border-default bg-surface-base/95 shadow-2xl backdrop-blur-sm"
+          style={{ height: motorPanelHeight }}
         >
           <MotorDataTable
             bus={bus}

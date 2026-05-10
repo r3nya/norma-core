@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Long from "long";
-import { Camera, Maximize2, Minimize2 } from "lucide-react";
+import { ArrowLeftRight, Camera, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { commandManager } from "../api/commands";
 import { FrameEntry } from "../api/frame-parser";
@@ -134,6 +134,16 @@ const BusCard: React.FC<BusCardProps> = ({
 
     setSecondaryVideoSourceId(sourceId);
   }, [primaryVideoSourceId]);
+
+  const handleSwapVideoSources = useCallback(() => {
+    if (!primaryVideoSourceId || !secondaryVideoSourceId) {
+      return;
+    }
+
+    setPrimaryVideoSourceId(secondaryVideoSourceId);
+    setSecondaryVideoSourceId(primaryVideoSourceId);
+    hasPrimaryVideoSourcePreferenceRef.current = true;
+  }, [primaryVideoSourceId, secondaryVideoSourceId]);
 
   const handleControlSourceChange = async (sourceBusSerial: string | null) => {
     if (!bus.bus?.serialNumber) {
@@ -422,75 +432,6 @@ const BusCard: React.FC<BusCardProps> = ({
               })}
             </select>
           )}
-          {viewMode === "camera" && (
-            <div
-              className="flex rounded-md border border-border-subtle bg-surface-primary p-0.5"
-              role="group"
-              aria-label="Camera layout"
-            >
-              <button
-                type="button"
-                onClick={() => setCameraLayout("pip")}
-                className={`flex h-8 min-w-8 items-center justify-center rounded px-2 transition-colors ${
-                  cameraLayout === "pip"
-                    ? "bg-accent-data text-surface-base"
-                    : "text-text-muted hover:text-text-primary"
-                }`}
-                title="PiP layout"
-                aria-label="PiP layout"
-              >
-                <span className="relative block h-4 w-4 rounded-[2px] border border-current">
-                  <span className="absolute -bottom-px -right-px h-2 w-2 rounded-[1px] border border-current bg-current/20" />
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCameraLayout("side-by-side")}
-                className={`flex h-8 min-w-8 items-center justify-center rounded px-2 transition-colors ${
-                  cameraLayout === "side-by-side"
-                    ? "bg-accent-data text-surface-base"
-                    : "text-text-muted hover:text-text-primary"
-                }`}
-                title="Side-by-side layout"
-                aria-label="Side-by-side layout"
-              >
-                <span className="grid h-4 w-4 grid-cols-2 gap-[2px]">
-                  <span className="rounded-[1px] border border-current" />
-                  <span className="rounded-[1px] border border-current" />
-                </span>
-              </button>
-            </div>
-          )}
-          {viewMode === "camera" && hasMotors && (
-            <button
-              type="button"
-              onClick={() => setShowCameraMotorData((prev) => !prev)}
-              className={`flex h-9 items-center justify-center rounded border px-3 text-xs font-bold transition-colors ${
-                showCameraMotorData
-                  ? "border-accent-success-deep bg-accent-success-bg text-text-primary"
-                  : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
-              }`}
-              title={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
-              aria-label={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
-            >
-              MOTORS
-            </button>
-          )}
-          {viewMode === "camera" && (
-            <button
-              type="button"
-              onClick={toggleCameraFullscreen}
-              className="flex h-9 items-center justify-center rounded border border-border-subtle bg-surface-primary px-2 text-text-muted transition-colors hover:text-text-primary"
-              title={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
-              aria-label={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
-            >
-              {isCameraFullscreen ? (
-                <Minimize2 className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Maximize2 className="h-4 w-4" aria-hidden="true" />
-              )}
-            </button>
-          )}
         </div>
         <div className="flex items-center gap-4 text-sm">
           <div className="flex items-center gap-1.5">
@@ -511,22 +452,101 @@ const BusCard: React.FC<BusCardProps> = ({
       {/* Content */}
       <div
         ref={cameraContentRef}
-        className={`relative h-180 ${isCameraFullscreen ? "bg-black" : ""}`}
+        className={`relative ${isCameraFullscreen ? "h-screen bg-black" : "h-180"}`}
       >
         {viewMode === "camera" ? (
-          <RobotCameraView
-            primaryVideoSource={primaryVideoSource}
-            secondaryVideoSource={secondaryVideoSource}
-            primaryVideoSourceId={primaryVideoSourceId}
-            secondaryVideoSourceId={secondaryVideoSourceId}
-            bus={bus}
-            busIndex={busIndex}
-            showMotorData={showCameraMotorData}
-            showCalibrateButton={true}
-            needsCalibration={needsCalibration}
-            isWebControlled={isWebControlled}
-            cameraLayout={cameraLayout}
-          />
+          <>
+            <RobotCameraView
+              primaryVideoSource={primaryVideoSource}
+              secondaryVideoSource={secondaryVideoSource}
+              primaryVideoSourceId={primaryVideoSourceId}
+              secondaryVideoSourceId={secondaryVideoSourceId}
+              bus={bus}
+              busIndex={busIndex}
+              showMotorData={showCameraMotorData}
+              showCalibrateButton={true}
+              needsCalibration={needsCalibration}
+              isWebControlled={isWebControlled}
+              cameraLayout={cameraLayout}
+            />
+            <div className="absolute left-2 top-2 z-50 flex max-w-[calc(100%-1rem)] flex-wrap gap-1.5 rounded-lg border border-border-default bg-surface-primary/75 p-1.5 shadow-lg backdrop-blur-sm sm:left-3 sm:top-3">
+              <div
+                className="flex rounded-md border border-border-subtle bg-surface-primary p-0.5"
+                role="group"
+                aria-label="Camera layout"
+              >
+                <button
+                  type="button"
+                  onClick={() => setCameraLayout("pip")}
+                  className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
+                    cameraLayout === "pip"
+                      ? "bg-accent-data text-surface-base"
+                      : "text-text-muted hover:text-text-primary"
+                  }`}
+                  title="PiP layout"
+                  aria-label="PiP layout"
+                >
+                  <span className="relative block h-4 w-4 rounded-[2px] border border-current">
+                    <span className="absolute -bottom-px -right-px h-2 w-2 rounded-[1px] border border-current bg-current/20" />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCameraLayout("side-by-side")}
+                  className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
+                    cameraLayout === "side-by-side"
+                      ? "bg-accent-data text-surface-base"
+                      : "text-text-muted hover:text-text-primary"
+                  }`}
+                  title="Side-by-side layout"
+                  aria-label="Side-by-side layout"
+                >
+                  <span className="grid h-4 w-4 grid-cols-2 gap-[2px]">
+                    <span className="rounded-[1px] border border-current" />
+                    <span className="rounded-[1px] border border-current" />
+                  </span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleSwapVideoSources}
+                disabled={!primaryVideoSourceId || !secondaryVideoSourceId}
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-surface-primary text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                title="Swap cameras"
+                aria-label="Swap cameras"
+              >
+                <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+              {hasMotors && (
+                <button
+                  type="button"
+                  onClick={() => setShowCameraMotorData((prev) => !prev)}
+                  className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors ${
+                    showCameraMotorData
+                      ? "border-accent-success-deep bg-accent-success-bg text-text-primary"
+                      : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
+                  }`}
+                  title={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
+                  aria-label={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
+                >
+                  <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={toggleCameraFullscreen}
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-surface-primary text-text-muted transition-colors hover:text-text-primary"
+                title={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
+                aria-label={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
+              >
+                {isCameraFullscreen ? (
+                  <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </>
         ) : canRender3d ? (
           <BusWebGLRenderer
             busSerialNumber={bus.bus?.serialNumber}
