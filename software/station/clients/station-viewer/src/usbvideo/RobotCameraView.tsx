@@ -1,19 +1,19 @@
 import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { Scan } from 'lucide-react';
-import { st3215, usbvideo } from '../api/proto.js';
-import CameraMotorStrip from '../st3215/CameraMotorStrip';
-import MotorDataTable from '../st3215/MotorDataTable';
-import CameraViewer from './CameraViewer';
+import { st3215 } from '@/api/proto.js';
+import CameraMotorStrip from '@/st3215/CameraMotorStrip';
+import MotorDataTable from '@/st3215/MotorDataTable';
+import CameraViewer from '@/usbvideo/CameraViewer';
 
 type CameraFitMode = 'contain' | 'cover';
+type CameraLayoutMode = 'pip' | 'side-by-side' | 'stacked';
+type MotorStripPlacement = 'none' | 'bottom';
 
 interface RobotCameraViewProps {
-  primaryVideoSource?: usbvideo.IRxEnvelope;
-  secondaryVideoSource?: usbvideo.IRxEnvelope;
   primaryVideoSourceId?: string | null;
   secondaryVideoSourceId?: string | null;
-  cameraLayout?: 'pip' | 'side-by-side' | 'stacked';
+  cameraLayout?: CameraLayoutMode;
   primaryCameraFit?: CameraFitMode;
   secondaryCameraFit?: CameraFitMode;
   onPrimaryCameraFitToggle?: () => void;
@@ -48,12 +48,20 @@ const RobotCameraView = memo(function RobotCameraView({
     (cameraLayout === 'side-by-side' || cameraLayout === 'stacked') &&
     Boolean(secondaryVideoSourceId);
   const isStackedLayout = cameraLayout === 'stacked';
-  const shouldShowCompactMotorStrip = showMotorData && motorCount > 0 && !isWebControlled;
-  const shouldShowMobilePaneMotorStrip =
-    shouldShowCompactMotorStrip && isSplitLayout && !isStackedLayout;
-  const shouldShowStackedPaneMotorStrip =
-    shouldShowCompactMotorStrip && isSplitLayout && isStackedLayout;
-  const shouldLiftMobilePip = shouldShowCompactMotorStrip && !isSplitLayout;
+  const motorStripPlacement: MotorStripPlacement =
+    !showMotorData || motorCount === 0 ? 'none' : 'bottom';
+  const renderMotorStrip = () => (
+    isWebControlled ? (
+      <MotorDataTable
+        bus={bus}
+        busIndex={busIndex}
+        isWebControlled={isWebControlled}
+        layout="panel"
+      />
+    ) : (
+      <CameraMotorStrip bus={bus} />
+    )
+  );
   const renderFitButton = (
     fit: CameraFitMode,
     onToggle: (() => void) | undefined,
@@ -63,7 +71,11 @@ const RobotCameraView = memo(function RobotCameraView({
     <button
       type="button"
       onClick={onToggle}
-      className={`absolute z-30 flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle bg-surface-primary/75 text-text-muted shadow-lg backdrop-blur-sm transition-colors hover:text-text-primary ${fit === 'cover' ? 'bg-accent-data/90 text-surface-base hover:text-surface-base' : ''} ${className}`}
+      className={`absolute z-30 flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle shadow-lg backdrop-blur-sm transition-colors ${
+        fit === 'cover'
+          ? 'bg-accent-data/90 text-surface-base hover:text-surface-base'
+          : 'bg-surface-primary/75 text-text-muted hover:text-text-primary'
+      } ${className}`}
       title={`${label}: ${fit}`}
       aria-label={`Toggle ${label} fit`}
     >
@@ -92,15 +104,6 @@ const RobotCameraView = memo(function RobotCameraView({
                 fit={primaryCameraFit}
               />
               {renderFitButton(primaryCameraFit, onPrimaryCameraFitToggle, 'Primary camera')}
-              {(shouldShowMobilePaneMotorStrip || shouldShowStackedPaneMotorStrip) && (
-                <div
-                  className={`absolute bottom-0 left-0 right-0 z-40 max-h-[48%] min-h-0 border-t border-border-default bg-surface-base/95 shadow-2xl backdrop-blur-sm ${
-                    shouldShowMobilePaneMotorStrip ? 'sm:hidden' : ''
-                  }`}
-                >
-                  <CameraMotorStrip bus={bus} />
-                </div>
-              )}
             </div>
             <div className="relative min-h-0 min-w-0">
               <CameraViewer
@@ -123,9 +126,7 @@ const RobotCameraView = memo(function RobotCameraView({
             {renderFitButton(primaryCameraFit, onPrimaryCameraFitToggle, 'Primary camera')}
             {secondaryVideoSourceId && (
               <div
-                className={`absolute right-4 z-30 h-[160px] w-2/5 min-w-[220px] max-w-[360px] overflow-hidden rounded-lg border-2 border-border-default bg-surface-primary shadow-2xl ${
-                  shouldLiftMobilePip ? 'bottom-[36%] sm:bottom-4' : 'bottom-4'
-                }`}
+                className="absolute bottom-4 right-4 z-30 h-[160px] w-2/5 min-w-[220px] max-w-[360px] overflow-hidden rounded-lg border-2 border-border-default bg-surface-primary shadow-2xl"
               >
                 <CameraViewer
                   sourceId={secondaryVideoSourceId}
@@ -167,31 +168,14 @@ const RobotCameraView = memo(function RobotCameraView({
         )}
       </div>
 
-      {showMotorData &&
-        motorCount > 0 &&
-        !shouldShowMobilePaneMotorStrip &&
-        !shouldShowStackedPaneMotorStrip && (
+      {motorStripPlacement === 'bottom' && (
         <div
-          className={`absolute bottom-0 left-0 right-0 z-40 min-h-0 border-t border-border-default bg-surface-base/95 shadow-2xl backdrop-blur-sm ${
-            isWebControlled ? '' : 'max-h-[34%]'
+          className={`z-40 min-h-0 shrink-0 border-t border-border-default bg-surface-base/95 shadow-2xl backdrop-blur-sm ${
+            isWebControlled ? '' : 'max-h-40'
           }`}
           style={isWebControlled ? { height: motorPanelHeight } : undefined}
         >
-          {isWebControlled ? (
-            <MotorDataTable
-              bus={bus}
-              busIndex={busIndex}
-              isWebControlled={isWebControlled}
-              layout="panel"
-            />
-          ) : (
-            <CameraMotorStrip bus={bus} />
-          )}
-        </div>
-      )}
-      {shouldShowMobilePaneMotorStrip && (
-        <div className="absolute bottom-0 left-0 right-0 z-40 hidden min-h-0 max-h-[34%] border-t border-border-default bg-surface-base/95 shadow-2xl backdrop-blur-sm sm:block">
-          <CameraMotorStrip bus={bus} />
+          {renderMotorStrip()}
         </div>
       )}
     </div>

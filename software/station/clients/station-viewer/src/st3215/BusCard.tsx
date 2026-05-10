@@ -1,18 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Long from "long";
-import { ArrowLeftRight, Camera, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
-import { Link } from "react-router-dom";
-import { commandManager } from "../api/commands";
-import { FrameEntry } from "../api/frame-parser";
-import { motors_mirroring, st3215, usbvideo } from "../api/proto";
-import { serverToLocal } from "../api/timestamp-utils";
-import { getLatencyBgColor, getLatencyTextColor } from "@/utils/color-utils";
-import { getVideoSourceId, getVideoSourceLabel } from "../usbvideo/camera-source";
-import CameraViewer from "../usbvideo/CameraViewer";
-import RobotCameraView from "../usbvideo/RobotCameraView";
-import BusWebGLRenderer from "./BusWebGLRenderer";
-import MotorDataTable from "./MotorDataTable";
-import { ADDR_GOAL_POSITION, getMotorPosition } from "./motor-parser";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Long from 'long';
+import { ArrowLeftRight, Camera, Maximize2, Minimize2, SlidersHorizontal } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { commandManager } from '@/api/commands';
+import { FrameEntry } from '@/api/frame-parser';
+import { motors_mirroring, st3215, usbvideo } from '@/api/proto.js';
+import { serverToLocal } from '@/api/timestamp-utils';
+import { getLatencyBgColor, getLatencyTextColor } from '@/utils/color-utils';
+import { getVideoSourceId, getVideoSourceLabel } from '@/usbvideo/camera-source';
+import CameraViewer from '@/usbvideo/CameraViewer';
+import RobotCameraView from '@/usbvideo/RobotCameraView';
+import BusWebGLRenderer from '@/st3215/BusWebGLRenderer';
+import MotorDataTable from '@/st3215/MotorDataTable';
+import { ADDR_GOAL_POSITION, getMotorPosition } from '@/st3215/motor-parser';
 
 interface LatencyReading {
   timestamp: number;
@@ -28,14 +28,14 @@ interface LatencyStats {
 const STALE_CAMERA_MAX_AGE_MS = 60_000;
 const MIN_CALIBRATED_RANGE = 100;
 
-type RobotViewMode = "model" | "camera";
-type CameraLayoutMode = "pip" | "side-by-side" | "stacked";
-type CameraFitMode = "contain" | "cover";
+type RobotViewMode = 'model' | 'camera';
+type CameraLayoutMode = 'pip' | 'side-by-side' | 'stacked';
+type CameraFitMode = 'contain' | 'cover';
 
 function getVideoSourceShortLabel(entry: FrameEntry<usbvideo.IRxEnvelope>): string {
   return entry.data.camera?.deviceNumber !== undefined
     ? String(entry.data.camera.deviceNumber)
-    : "Camera";
+    : 'Camera';
 }
 
 interface BusCardProps {
@@ -55,16 +55,21 @@ const BusCard: React.FC<BusCardProps> = ({
 }) => {
   const latencyHistoryRef = useRef<Map<string, LatencyReading[]>>(new Map());
   const hasPrimaryVideoSourcePreferenceRef = useRef(false);
+  const lastWebControlRequestMsRef = useRef(0);
   const [primaryVideoSourceId, setPrimaryVideoSourceId] = useState<string | null>(null);
   const [secondaryVideoSourceId, setSecondaryVideoSourceId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<RobotViewMode>("model");
-  const [cameraLayout, setCameraLayout] = useState<CameraLayoutMode>("pip");
-  const [primaryCameraFit, setPrimaryCameraFit] = useState<CameraFitMode>("contain");
-  const [secondaryCameraFit, setSecondaryCameraFit] = useState<CameraFitMode>("contain");
+  const [viewMode, setViewMode] = useState<RobotViewMode>('model');
+  const [cameraLayout, setCameraLayout] = useState<CameraLayoutMode>('pip');
+  const [primaryCameraFit, setPrimaryCameraFit] = useState<CameraFitMode>('contain');
+  const [secondaryCameraFit, setSecondaryCameraFit] = useState<CameraFitMode>('contain');
   const [showCameraMotorData, setShowCameraMotorData] = useState(false);
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isWebControlled, setIsWebControlled] = useState(false);
   const cameraContentRef = useRef<HTMLDivElement>(null);
+  const busSerialNumber = bus.bus?.serialNumber ?? null;
+  const webControlledStorageKey = busSerialNumber
+    ? `station-viewer:web-controlled:${busSerialNumber}`
+    : null;
 
   const activeVideoSources = useMemo(() => {
     if (!videoSources) {
@@ -86,19 +91,22 @@ const BusCard: React.FC<BusCardProps> = ({
     });
   }, [videoSources]);
 
-  const primaryVideoSource = activeVideoSources.find(
-    (entry) => getVideoSourceId(entry) === primaryVideoSourceId,
-  )?.data;
-
-  const secondaryVideoSource = activeVideoSources.find(
-    (entry) => getVideoSourceId(entry) === secondaryVideoSourceId,
-  )?.data;
-
   const activeVideoSourceIds = useMemo(
     () => activeVideoSources.map(getVideoSourceId),
     [activeVideoSources],
   );
   const firstActiveVideoSourceId = activeVideoSourceIds[0] ?? null;
+
+  const currentMirror = mirroringState?.mirroring?.find((m) =>
+    m.targets?.some((t) => t.id?.uniqueId === busSerialNumber),
+  );
+
+  const setWebControlledState = useCallback((nextState: boolean) => {
+    setIsWebControlled(nextState);
+    if (webControlledStorageKey) {
+      sessionStorage.setItem(webControlledStorageKey, nextState ? 'true' : 'false');
+    }
+  }, [webControlledStorageKey]);
 
   useEffect(() => {
     if (primaryVideoSourceId && !activeVideoSourceIds.includes(primaryVideoSourceId)) {
@@ -126,6 +134,28 @@ const BusCard: React.FC<BusCardProps> = ({
     primaryVideoSourceId,
     secondaryVideoSourceId,
   ]);
+
+  useEffect(() => {
+    if (!webControlledStorageKey) {
+      setIsWebControlled(false);
+      return;
+    }
+
+    setIsWebControlled(sessionStorage.getItem(webControlledStorageKey) === 'true');
+  }, [webControlledStorageKey]);
+
+  useEffect(() => {
+    if (!isWebControlled || !currentMirror) {
+      return;
+    }
+
+    const isFreshLocalWebControlRequest = Date.now() - lastWebControlRequestMsRef.current < 1000;
+    if (isFreshLocalWebControlRequest) {
+      return;
+    }
+
+    setWebControlledState(false);
+  }, [currentMirror, isWebControlled, setWebControlledState]);
 
   const handlePrimaryVideoSourceChange = useCallback((sourceId: string | null) => {
     // Keep this sticky even for "None" so an explicit user clear is not auto-filled again.
@@ -168,19 +198,17 @@ const BusCard: React.FC<BusCardProps> = ({
     hasPrimaryVideoSourcePreferenceRef.current = true;
   }, [primaryVideoSourceId, secondaryVideoSourceId]);
 
-  const handleControlSourceChange = async (sourceBusSerial: string | null) => {
-    if (!bus.bus?.serialNumber) {
+  const handleControlSourceChange = useCallback(async (sourceBusSerial: string | null) => {
+    if (!busSerialNumber) {
       return;
     }
 
-    // Handle Web-controlled mode
-    if (sourceBusSerial === "web-controlled") {
+    if (sourceBusSerial === 'web-controlled') {
       const target: motors_mirroring.IMirroringBus = {
         type: motors_mirroring.BusType.MBT_ST3215,
-        uniqueId: bus.bus.serialNumber,
+        uniqueId: busSerialNumber,
       };
 
-      // Stop any existing mirroring
       await commandManager.sendMirroringCommand({
         type: motors_mirroring.CommandType.CT_STOP_MIRROR,
         source: target,
@@ -195,7 +223,7 @@ const BusCard: React.FC<BusCardProps> = ({
 
             // Send command to set motor to its current position (freeze it)
             const command = st3215.Command.create({
-              targetBusSerial: bus.bus?.serialNumber,
+              targetBusSerial: busSerialNumber,
               write: {
                 motorId: motor.id,
                 address: ADDR_GOAL_POSITION,
@@ -213,15 +241,16 @@ const BusCard: React.FC<BusCardProps> = ({
         }
       }
 
-      setIsWebControlled(true);
+      lastWebControlRequestMsRef.current = Date.now();
+      setWebControlledState(true);
       return;
     }
 
-    setIsWebControlled(false);
+    setWebControlledState(false);
 
     const target: motors_mirroring.IMirroringBus = {
       type: motors_mirroring.BusType.MBT_ST3215,
-      uniqueId: bus.bus.serialNumber,
+      uniqueId: busSerialNumber,
     };
 
     if (sourceBusSerial) {
@@ -240,11 +269,7 @@ const BusCard: React.FC<BusCardProps> = ({
         source: target,
       });
     }
-  };
-
-  const currentMirror = mirroringState?.mirroring?.find((m) =>
-    m.targets?.some((t) => t.id?.uniqueId === bus.bus?.serialNumber),
-  );
+  }, [bus.motors, busSerialNumber, setWebControlledState]);
 
   // Function to calculate moving average for latency (15 second window)
   const getMovingAverageLatency = (
@@ -300,6 +325,13 @@ const BusCard: React.FC<BusCardProps> = ({
   const needsCalibration = hasMotors && (hasUnfrozenMotor || hasNarrowRange);
   const canRender3d = [6, 8].includes(bus.motors?.length || 0);
   const canShowCamera = activeVideoSources.length > 0;
+
+  useEffect(() => {
+    if (!canShowCamera && viewMode === 'camera') {
+      setViewMode('model');
+    }
+  }, [canShowCamera, viewMode]);
+
   const controlSourceWidthClass = viewMode === "camera" ? "w-[170px]" : "max-w-[180px]";
   const cameraSelectWidthClass = viewMode === "camera" ? "w-[150px]" : "max-w-[180px]";
   const selectControlClass = "block h-9 min-w-0 rounded-md border border-border-subtle bg-surface-secondary pl-3 pr-10 text-sm text-text-primary focus:border-accent-success-deep focus:outline-none focus:ring-accent-success-deep";
@@ -339,6 +371,28 @@ const BusCard: React.FC<BusCardProps> = ({
       document.removeEventListener("fullscreenchange", onFullscreenChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isCameraFullscreen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const cameraContent = cameraContentRef.current;
+      if (
+        event.key === "Escape" &&
+        cameraContent &&
+        document.fullscreenElement === cameraContent
+      ) {
+        void document.exitFullscreen();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isCameraFullscreen]);
 
   useEffect(() => {
     const cameraContent = cameraContentRef.current;
@@ -423,6 +477,14 @@ const BusCard: React.FC<BusCardProps> = ({
                     : sourceId === secondaryVideoSourceId
                       ? "AUX"
                       : null;
+                const chipTitle =
+                  role === "MAIN"
+                    ? `MAIN: ${label}. Click to clear; AUX becomes MAIN.`
+                    : role === "AUX"
+                      ? `AUX: ${label}. Click to clear.`
+                      : primaryVideoSourceId
+                        ? `Select ${label} as AUX camera.`
+                        : `Select ${label} as MAIN camera.`;
 
                 return (
                   <button
@@ -436,7 +498,7 @@ const BusCard: React.FC<BusCardProps> = ({
                           ? "border-accent-success-deep bg-accent-success-bg text-text-primary"
                           : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
                     }`}
-                    title={role ? `${role}: ${label}` : label}
+                    title={chipTitle}
                     aria-label={role ? `${role} camera ${label}` : `Select camera ${label}`}
                   >
                     <span className="truncate">{shortLabel}</span>
@@ -497,8 +559,6 @@ const BusCard: React.FC<BusCardProps> = ({
         {viewMode === "camera" ? (
           <>
             <RobotCameraView
-              primaryVideoSource={primaryVideoSource}
-              secondaryVideoSource={secondaryVideoSource}
               primaryVideoSourceId={primaryVideoSourceId}
               secondaryVideoSourceId={secondaryVideoSourceId}
               bus={bus}
