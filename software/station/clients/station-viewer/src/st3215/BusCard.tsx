@@ -309,8 +309,6 @@ const BusCard: React.FC<BusCardProps> = ({
       return;
     }
 
-    setWebControlledState(false);
-
     const target: motors_mirroring.IMirroringBus = {
       type: motors_mirroring.BusType.MBT_ST3215,
       uniqueId: busSerialNumber,
@@ -326,11 +324,13 @@ const BusCard: React.FC<BusCardProps> = ({
         source: source,
         targets: [target],
       });
+      setWebControlledState(false);
     } else {
       await commandManager.sendMirroringCommand({
         type: motors_mirroring.CommandType.CT_STOP_MIRROR,
         source: target,
       });
+      setWebControlledState(false);
     }
   }, [bus.motors, busSerialNumber, setWebControlledState]);
 
