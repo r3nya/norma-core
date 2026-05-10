@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Long from 'long';
-import { ArrowLeftRight, Camera, Maximize2, Minimize2, SlidersHorizontal } from 'lucide-react';
+import { Camera } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { commandManager } from '@/api/commands';
 import { FrameEntry } from '@/api/frame-parser';
+import { useElementFullscreen } from '@/hooks/useElementFullscreen';
 import { motors_mirroring, st3215, usbvideo } from '@/api/proto.js';
 import { serverToLocal } from '@/api/timestamp-utils';
 import { getLatencyBgColor, getLatencyTextColor } from '@/utils/color-utils';
@@ -11,6 +12,7 @@ import { getVideoSourceId, getVideoSourceLabel } from '@/usbvideo/camera-source'
 import CameraViewer from '@/usbvideo/CameraViewer';
 import RobotCameraView from '@/usbvideo/RobotCameraView';
 import BusWebGLRenderer from '@/st3215/BusWebGLRenderer';
+import CameraHudControls from '@/st3215/CameraHudControls';
 import MotorDataTable from '@/st3215/MotorDataTable';
 import { ADDR_GOAL_POSITION, getMotorPosition } from '@/st3215/motor-parser';
 
@@ -27,6 +29,9 @@ interface LatencyStats {
 
 const STALE_CAMERA_MAX_AGE_MS = 60_000;
 const MIN_CALIBRATED_RANGE = 100;
+const WEB_CONTROL_STORAGE_TTL_MS = 60_000;
+const WEB_CONTROL_MIRROR_IGNORE_AFTER_LOCAL_REQUEST_MS = 5_000;
+const WEB_CONTROL_MIRROR_CONFIRM_MS = 800;
 
 type RobotViewMode = 'model' | 'camera';
 type CameraLayoutMode = 'pip' | 'side-by-side' | 'stacked';
@@ -56,6 +61,7 @@ const BusCard: React.FC<BusCardProps> = ({
   const latencyHistoryRef = useRef<Map<string, LatencyReading[]>>(new Map());
   const hasPrimaryVideoSourcePreferenceRef = useRef(false);
   const lastWebControlRequestMsRef = useRef(0);
+  const mirrorSeenWhileWebControlAtRef = useRef<number | null>(null);
   const [primaryVideoSourceId, setPrimaryVideoSourceId] = useState<string | null>(null);
   const [secondaryVideoSourceId, setSecondaryVideoSourceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<RobotViewMode>('model');
@@ -63,9 +69,13 @@ const BusCard: React.FC<BusCardProps> = ({
   const [primaryCameraFit, setPrimaryCameraFit] = useState<CameraFitMode>('contain');
   const [secondaryCameraFit, setSecondaryCameraFit] = useState<CameraFitMode>('contain');
   const [showCameraMotorData, setShowCameraMotorData] = useState(false);
-  const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isWebControlled, setIsWebControlled] = useState(false);
   const cameraContentRef = useRef<HTMLDivElement>(null);
+  const {
+    isFullscreen: isCameraFullscreen,
+    toggleFullscreen: toggleCameraFullscreen,
+    exitFullscreen: exitCameraFullscreen,
+  } = useElementFullscreen(cameraContentRef);
   const busSerialNumber = bus.bus?.serialNumber ?? null;
   const webControlledStorageKey = busSerialNumber
     ? `station-viewer:web-controlled:${busSerialNumber}`
@@ -104,7 +114,18 @@ const BusCard: React.FC<BusCardProps> = ({
   const setWebControlledState = useCallback((nextState: boolean) => {
     setIsWebControlled(nextState);
     if (webControlledStorageKey) {
-      sessionStorage.setItem(webControlledStorageKey, nextState ? 'true' : 'false');
+      if (!nextState) {
+        sessionStorage.removeItem(webControlledStorageKey);
+        return;
+      }
+
+      sessionStorage.setItem(
+        webControlledStorageKey,
+        JSON.stringify({
+          enabled: true,
+          timestamp: Date.now(),
+        }),
+      );
     }
   }, [webControlledStorageKey]);
 
@@ -141,19 +162,61 @@ const BusCard: React.FC<BusCardProps> = ({
       return;
     }
 
-    setIsWebControlled(sessionStorage.getItem(webControlledStorageKey) === 'true');
+    const persistedValue = sessionStorage.getItem(webControlledStorageKey);
+    if (!persistedValue) {
+      setIsWebControlled(false);
+      return;
+    }
+
+    try {
+      const parsedValue = JSON.parse(persistedValue) as { enabled?: boolean; timestamp?: number };
+      const isFresh = typeof parsedValue.timestamp === 'number'
+        && Date.now() - parsedValue.timestamp <= WEB_CONTROL_STORAGE_TTL_MS;
+      const isEnabled = parsedValue.enabled === true && isFresh;
+
+      setIsWebControlled(isEnabled);
+      if (!isEnabled) {
+        sessionStorage.removeItem(webControlledStorageKey);
+      }
+    } catch {
+      setIsWebControlled(false);
+      sessionStorage.removeItem(webControlledStorageKey);
+    }
   }, [webControlledStorageKey]);
 
   useEffect(() => {
-    if (!isWebControlled || !currentMirror) {
+    if (!isWebControlled) {
+      mirrorSeenWhileWebControlAtRef.current = null;
       return;
     }
 
-    const isFreshLocalWebControlRequest = Date.now() - lastWebControlRequestMsRef.current < 1000;
-    if (isFreshLocalWebControlRequest) {
+    if (!currentMirror) {
+      mirrorSeenWhileWebControlAtRef.current = null;
       return;
     }
 
+    const nowMs = Date.now();
+    const isTooSoonAfterLocalRequest =
+      nowMs - lastWebControlRequestMsRef.current < WEB_CONTROL_MIRROR_IGNORE_AFTER_LOCAL_REQUEST_MS;
+
+    if (isTooSoonAfterLocalRequest) {
+      mirrorSeenWhileWebControlAtRef.current = null;
+      return;
+    }
+
+    if (mirrorSeenWhileWebControlAtRef.current === null) {
+      mirrorSeenWhileWebControlAtRef.current = nowMs;
+      return;
+    }
+
+    const hasPersistentMirrorWhileWebControl =
+      nowMs - mirrorSeenWhileWebControlAtRef.current >= WEB_CONTROL_MIRROR_CONFIRM_MS;
+
+    if (!hasPersistentMirrorWhileWebControl) {
+      return;
+    }
+
+    mirrorSeenWhileWebControlAtRef.current = null;
     setWebControlledState(false);
   }, [currentMirror, isWebControlled, setWebControlledState]);
 
@@ -342,66 +405,14 @@ const BusCard: React.FC<BusCardProps> = ({
         : activeVideoSources,
     [activeVideoSources, secondaryVideoSourceId, viewMode],
   );
-  const toggleCameraFullscreen = useCallback(async () => {
-    const cameraContent = cameraContentRef.current;
-    if (!cameraContent) {
+
+  useEffect(() => {
+    if (viewMode === "camera") {
       return;
     }
 
-    try {
-      if (document.fullscreenElement === cameraContent) {
-        await document.exitFullscreen();
-        return;
-      }
-
-      await cameraContent.requestFullscreen();
-    } catch {
-      // Ignore fullscreen errors (for example, if blocked by browser policy).
-    }
-  }, []);
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      const cameraContent = cameraContentRef.current;
-      setIsCameraFullscreen(Boolean(cameraContent && document.fullscreenElement === cameraContent));
-    };
-
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isCameraFullscreen) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      const cameraContent = cameraContentRef.current;
-      if (
-        event.key === "Escape" &&
-        cameraContent &&
-        document.fullscreenElement === cameraContent
-      ) {
-        void document.exitFullscreen();
-      }
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [isCameraFullscreen]);
-
-  useEffect(() => {
-    const cameraContent = cameraContentRef.current;
-    if (!cameraContent || viewMode === "camera" || document.fullscreenElement !== cameraContent) {
-      return;
-    }
-
-    void document.exitFullscreen();
-  }, [viewMode]);
+    void exitCameraFullscreen();
+  }, [exitCameraFullscreen, viewMode]);
 
   return (
     <div className="min-w-0 border border-border-default rounded-lg bg-surface-primary/50">
@@ -439,7 +450,8 @@ const BusCard: React.FC<BusCardProps> = ({
                 : (currentMirror?.source?.id?.uniqueId ?? "")
             }
             onChange={(e) => handleControlSourceChange(e.target.value || null)}
-            className={`${selectControlClass} ${controlSourceWidthClass}`}
+            disabled={!busSerialNumber}
+            className={`${selectControlClass} ${controlSourceWidthClass} disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <option value="">(Self-controlled)</option>
             <option value="web-controlled">(Web-controlled)</option>
@@ -573,91 +585,20 @@ const BusCard: React.FC<BusCardProps> = ({
               onPrimaryCameraFitToggle={() => setPrimaryCameraFit((fit) => (fit === "contain" ? "cover" : "contain"))}
               onSecondaryCameraFitToggle={() => setSecondaryCameraFit((fit) => (fit === "contain" ? "cover" : "contain"))}
             />
-            <div className="absolute left-2 top-2 z-50 flex max-w-[calc(100%-1rem)] flex-wrap gap-1.5 rounded-lg border border-border-default bg-surface-primary/75 p-1.5 shadow-lg backdrop-blur-sm sm:left-3 sm:top-3">
-              <div
-                className="flex rounded-md border border-border-subtle bg-surface-primary p-0.5"
-                role="group"
-                aria-label="Camera layout"
-              >
-                <button
-                  type="button"
-                  onClick={() => setCameraLayout("pip")}
-                  className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
-                    cameraLayout === "pip"
-                      ? "bg-accent-data text-surface-base"
-                      : "text-text-muted hover:text-text-primary"
-                  }`}
-                  title="PiP layout"
-                  aria-label="PiP layout"
-                >
-                  <span className="relative block h-4 w-4 rounded-[2px] border border-current">
-                    <span className="absolute -bottom-px -right-px h-2 w-2 rounded-[1px] border border-current bg-current/20" />
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCameraLayout((layout) =>
-                      layout === "side-by-side" ? "stacked" : "side-by-side",
-                    )
-                  }
-                  className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
-                    cameraLayout === "side-by-side" || cameraLayout === "stacked"
-                      ? "bg-accent-data text-surface-base"
-                      : "text-text-muted hover:text-text-primary"
-                  }`}
-                  title={cameraLayout === "stacked" ? "Top-bottom layout" : "Side-by-side layout"}
-                  aria-label={cameraLayout === "stacked" ? "Top-bottom layout" : "Side-by-side layout"}
-                >
-                  <span className={`grid h-4 w-4 grid-cols-2 gap-[2px] ${cameraLayout === "stacked" ? "rotate-90" : ""}`}>
-                    <span className="rounded-[1px] border border-current" />
-                    <span className="rounded-[1px] border border-current" />
-                  </span>
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleSwapVideoSources}
-                disabled={!primaryVideoSourceId || !secondaryVideoSourceId}
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-surface-primary text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                title="Swap cameras"
-                aria-label="Swap cameras"
-              >
-                <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
-              </button>
-              {hasMotors && (
-                <button
-                  type="button"
-                  onClick={() => setShowCameraMotorData((prev) => !prev)}
-                  className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors ${
-                    showCameraMotorData
-                      ? "border-accent-success-deep bg-accent-success-bg text-text-primary"
-                      : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
-                  }`}
-                  title={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
-                  aria-label={showCameraMotorData ? "Hide motor panel" : "Show motor panel"}
-                >
-                  <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={toggleCameraFullscreen}
-                className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors ${
-                  isCameraFullscreen
-                    ? "border-accent-data bg-accent-data text-surface-base"
-                    : "border-border-subtle bg-surface-primary text-text-muted hover:text-text-primary"
-                }`}
-                title={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
-                aria-label={isCameraFullscreen ? "Exit fullscreen" : "Fullscreen cameras"}
-              >
-                {isCameraFullscreen ? (
-                  <Minimize2 className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" aria-hidden="true" />
-                )}
-              </button>
-            </div>
+            <CameraHudControls
+              cameraLayout={cameraLayout}
+              hasMotors={hasMotors}
+              showMotorData={showCameraMotorData}
+              isFullscreen={isCameraFullscreen}
+              canSwapCameras={Boolean(primaryVideoSourceId && secondaryVideoSourceId)}
+              onSetPipLayout={() => setCameraLayout('pip')}
+              onToggleSplitLayout={() =>
+                setCameraLayout((layout) => (layout === 'side-by-side' ? 'stacked' : 'side-by-side'))
+              }
+              onSwapCameras={handleSwapVideoSources}
+              onToggleMotorData={() => setShowCameraMotorData((prev) => !prev)}
+              onToggleFullscreen={toggleCameraFullscreen}
+            />
           </>
         ) : canRender3d ? (
           <BusWebGLRenderer
