@@ -9,8 +9,8 @@ on:
       - "software/station/clients/station-viewer/**"
 
 jobs:
-  typecheck-and-build:
-    name: Typecheck and Build
+  lint-typecheck-and-build:
+    name: Lint, Typecheck and Build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -28,6 +28,9 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
 
       - name: Typecheck
         run: yarn type-check
