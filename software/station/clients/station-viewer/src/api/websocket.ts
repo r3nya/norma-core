@@ -27,7 +27,6 @@ export interface ConnectionStats {
 class WebSocketManager extends EventTarget {
   private ws: WebSocket | null = null;
   private url: string;
-  private reconnectInterval: number = 100; // 100ms (kept for compatibility, replaced by getReconnectDelay)
   private isUpdating = true;
 
   private currentFrame: Frame | null = null;
