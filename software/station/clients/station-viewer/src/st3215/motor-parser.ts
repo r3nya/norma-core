@@ -21,9 +21,14 @@ export function getEffectiveMotorRange(motor: st3215.InferenceState.IMotorState)
 } {
   const rawMin = motor.rangeMin ?? 0;
   const rawMax = motor.rangeMax ?? 0;
-  if (rawMin === 0 && rawMax === 0) {
+
+  // Fresh/reset uncalibrated motors can report rangeMin/rangeMax equal to
+  // the current position, and that value may change after jogging. Treat any
+  // collapsed range as uncalibrated and use the full servo range in the UI.
+  if (rawMin === rawMax) {
     return { min: 0, max: MAX_ANGLE_STEP, isFallback: true };
   }
+
   return { min: rawMin, max: rawMax, isFallback: false };
 }
 
