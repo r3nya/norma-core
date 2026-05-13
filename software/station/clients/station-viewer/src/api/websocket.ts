@@ -27,7 +27,7 @@ export interface ConnectionStats {
 class WebSocketManager extends EventTarget {
   private ws: WebSocket | null = null;
   private url: string;
-  private reconnectInterval: number = 100; // 100ms
+  private reconnectInterval: number = 100; // 100ms (kept for compatibility, replaced by getReconnectDelay)
   private isUpdating = true;
 
   private currentFrame: Frame | null = null;
@@ -38,6 +38,11 @@ class WebSocketManager extends EventTarget {
   private pollingInterval: number | null = null;
   private isPolling: boolean = false;
   private frameTimestamps: number[] = [];
+
+  // Reconnect backoff state
+  private reconnectAttempt = 0;
+  private reconnectTimeout: number | null = null;
+  private isStopped = false;
 
   private stats: ConnectionStats = {
     endpoint: '',
@@ -147,6 +152,19 @@ class WebSocketManager extends EventTarget {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
+  /**
+   * Compute reconnect delay with exponential backoff + jitter.
+   * Base 200ms, doubles each attempt, capped at 30s.
+   * Jitter: ±20% to prevent thundering herd.
+   */
+  private getReconnectDelay(): number {
+    this.reconnectAttempt++;
+    const baseMs = 200; // 200ms base delay
+    const exponentialMs = Math.min(baseMs * Math.pow(2, this.reconnectAttempt - 1), 30_000);
+    const jitter = exponentialMs * (0.8 + Math.random() * 0.4); // ±20%
+    return Math.round(jitter);
+  }
+
   public stopUpdating() {
     if (!this.isUpdating) {
       return;
@@ -214,6 +232,7 @@ class WebSocketManager extends EventTarget {
 
     this.ws.onopen = () => {
       console.log("WebSocket: Connection established.");
+      this.reconnectAttempt = 0;
       this.stats.status = 'connected';
       this.stats.connectedAt = Date.now();
       this.stats.fps = 0;
@@ -257,7 +276,7 @@ class WebSocketManager extends EventTarget {
     };
 
     this.ws.onclose = (event) => {
-      console.log("WebSocket: Connection closed.", event);
+      console.log(`WebSocket: Connection closed (code: ${event.code}).`, event);
       this.stats.status = 'disconnected';
       this.stats.connectedAt = null;
       this.frameTimestamps = [];
@@ -270,7 +289,11 @@ class WebSocketManager extends EventTarget {
       this.stopPolling();
 
       this.emitStats();
-      this.reconnect();
+
+      // Only reconnect if manager hasn't been explicitly stopped
+      if (!this.isStopped) {
+        this.scheduleReconnect();
+      }
     };
 
     this.ws.onerror = (error) => {
@@ -279,11 +302,55 @@ class WebSocketManager extends EventTarget {
     };
   }
 
-  private reconnect() {
-    console.log(`WebSocket: Reconnecting in ${this.reconnectInterval / 1000} seconds...`);
-    setTimeout(() => {
+  /**
+   * Schedule a reconnect with exponential backoff delay.
+   * Cancels any previously scheduled reconnect.
+   */
+  private scheduleReconnect() {
+    this.cancelReconnect();
+
+    const delay = this.getReconnectDelay();
+    console.log(`WebSocket: Reconnecting in ${(delay / 1000).toFixed(1)}s (attempt ${this.reconnectAttempt})...`);
+    this.reconnectTimeout = window.setTimeout(() => {
       this.connect();
-    }, this.reconnectInterval);
+    }, delay);
+  }
+
+  /**
+   * Cancel a pending reconnect timeout.
+   */
+  private cancelReconnect() {
+    if (this.reconnectTimeout !== null) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+  }
+
+  /**
+   * Permanently stop: disconnect, cancel reconnect, mark as stopped.
+   * No further reconnect attempts will be made.
+   */
+  public stop() {
+    console.log("WebSocket: Stopping permanently...");
+    this.isStopped = true;
+    this.cancelReconnect();
+    if (this.ws) {
+      this.ws.onclose = null; // Prevent reconnect cascade
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  /**
+   * Start connection (or restart after stop).
+   * Resets stopped flag and cancels any pending reconnect.
+   */
+  public start() {
+    this.isStopped = false;
+    this.cancelReconnect();
+    if (!this.isConnected()) {
+      this.connect();
+    }
   }
 
   public send(request: normfs.IClientRequest) {
