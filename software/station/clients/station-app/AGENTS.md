@@ -3,6 +3,13 @@
 ## Project Structure & Module Organization
 `src/` contains the Electron code: `main.ts` manages the app window and bundled backend process, `preload.ts` exposes the desktop bridge, and `types.d.ts` holds shared TS declarations. `scripts/generate-version.mjs` writes the generated version constant used at build time. `build/` stores platform icons, `dist/` is the TypeScript output, and `release/` is created by `electron-builder`. This package depends on sibling projects: `../station-viewer` for the UI bundle and the Rust `station` package at the repo root.
 
+## Platform Support
+Only macOS and Linux are supported for packaging and distribution. Windows is not currently supported.
+
+- `npm run package:mac` and `npm run package:linux` are the only working packaging commands.
+- `electron-builder.yml` defines no `win:` target and the `extraResources` filter only matches the `station` binary (not `station.exe`).
+- While `main.ts` contains a `win32` branch for the backend binary name, no Windows packaging or signing configuration exists.
+
 ## Build, Test, and Development Commands
 Use Node `>=22` and npm `>=11`.
 
