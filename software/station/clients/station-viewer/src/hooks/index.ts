@@ -12,6 +12,7 @@ export { useBusMonitor } from "./useBusMonitor";
 export { useElementFullscreen } from "./useElementFullscreen";
 export { ThemeProvider, useTheme } from "./useTheme";
 export type { Theme } from "./useTheme";
+export { useWebSocketLifecycle } from "./useWebSocketLifecycle";
 export type { TimelineControlsRef } from "./useKeyboardNavigation";
 export type { UseWakeLockReturn } from "./useWakeLock";
 export type { BusStatus, ErrorPacketDump } from "./useBusMonitor";

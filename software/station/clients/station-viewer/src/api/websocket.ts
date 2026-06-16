@@ -56,7 +56,7 @@ class WebSocketManager extends EventTarget {
     this.stats.endpoint = url;
     this.normFs = new NormFsClient();
     this.commands = commandManager;
-    this.connect();
+    // connect() must be called explicitly via start()
   }
 
   public getCurrentFrame(): Frame | null {
@@ -147,6 +147,47 @@ class WebSocketManager extends EventTarget {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
+  /**
+   * Start connection and all subsystems (polling, time sync).
+   * Idempotent — safe to call multiple times.
+   */
+  public start() {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return;
+    }
+    this.connect();
+  }
+
+  /**
+   * Fully tear down: close socket, stop polling, stop time sync,
+   * clear timers. Safe to call even if already disconnected.
+   */
+  public disconnect() {
+    console.log("WebSocket: Disconnecting...");
+
+    // Stop auto-reconnect
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
+    }
+
+    // Stop subsystems
+    this.stopPolling();
+    this.isUpdating = false;
+    timeSyncManager.stop();
+
+    // Reset state
+    this.currentFrame = null;
+    this.latestEntryId = null;
+    this.frameTimestamps = [];
+    this.stats.status = 'disconnected';
+    this.stats.connectedAt = null;
+    this.stats.fps = 0;
+    this.stats.isFpsReady = false;
+    this.emitStats();
+  }
+
   public stopUpdating() {
     if (!this.isUpdating) {
       return;
@@ -206,6 +247,18 @@ class WebSocketManager extends EventTarget {
   }
 
   public connect() {
+    // Guard against repeated connects when already open or connecting
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
+    // Close existing socket if present (e.g., CLOSING state)
+    if (this.ws) {
+      this.ws.onclose = null; // Prevent reconnect cascade
+      this.ws.close();
+      this.ws = null;
+    }
+
     this.stats.status = 'connecting';
     this.emitStats();
     

@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
 import MainLayout from './components/MainLayout';
 import { isElectron } from '@/utils/platform';
+import { useWebSocketLifecycle } from '@/hooks/useWebSocketLifecycle';
 
 // Use HashRouter for Electron (file:// protocol) — BrowserRouter for web
 const Router = isElectron() ? HashRouter : BrowserRouter;
@@ -12,6 +13,8 @@ const St3215MotorConfigPage = lazy(() => import('./pages/St3215MotorConfigPage')
 const St3215BusCalibrationPage = lazy(() => import('./pages/St3215BusCalibrationPage'));
 
 function App() {
+  useWebSocketLifecycle();
+
   return (
     <Router>
       <Suspense fallback={<div className="min-h-screen bg-surface-base flex items-center justify-center text-accent-data font-mono">Loading...</div>}>
